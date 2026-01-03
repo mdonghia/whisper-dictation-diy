@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 
 class WhisperDictation:
-    def __init__(self, model_size="base"):
+    def __init__(self, model_size="small"):
         # Set up logging - logs are in ~/whisper-dictation/logs (visible in Finder!)
         log_dir = Path.home() / "whisper-dictation" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -43,6 +43,10 @@ class WhisperDictation:
         self.audio_data = []
         self.sample_rate = 16000
         self.recording_thread = None
+
+        # Track recent transcriptions for context
+        self.recent_transcriptions = []
+        self.max_context_items = 3
 
     def record_audio(self):
         """Record audio from microphone"""
@@ -74,13 +78,42 @@ class WhisperDictation:
             sf.write(tmp_filename, audio, self.sample_rate)
 
         try:
-            # Transcribe
-            segments, info = self.model.transcribe(tmp_filename, beam_size=5)
+            # Build context from recent transcriptions
+            initial_prompt = None
+            if self.recent_transcriptions:
+                initial_prompt = " ".join(self.recent_transcriptions[-self.max_context_items:])
+                logging.info(f"Using context from recent transcriptions")
+
+            # Transcribe with improved parameters for better accuracy
+            segments, info = self.model.transcribe(
+                tmp_filename,
+                language="en",  # Explicitly specify English for better performance
+                beam_size=5,  # Good balance of speed and accuracy
+                temperature=0.0,  # Use deterministic decoding to reduce hallucinations
+                initial_prompt=initial_prompt,  # Provide context from recent transcriptions
+                vad_filter=True,  # Filter out non-speech to prevent hallucinating silence
+                vad_parameters=dict(
+                    threshold=0.5,  # Default threshold
+                    min_speech_duration_ms=250,  # Minimum speech duration
+                    min_silence_duration_ms=2000,  # Longer silence = end of speech
+                    speech_pad_ms=400  # Padding around speech
+                ),
+                condition_on_previous_text=False,  # Disable to prevent hallucination patterns
+                word_timestamps=False,  # Faster without word-level timestamps
+                no_speech_threshold=0.6,  # Higher threshold to reject silence/noise
+                compression_ratio_threshold=2.4,  # Detect and reject gibberish
+                log_prob_threshold=-1.0  # Reject low-confidence output
+            )
 
             # Collect all text
             text = " ".join([segment.text.strip() for segment in segments])
 
             if text:
+                # Add to recent transcriptions for context
+                self.recent_transcriptions.append(text)
+                if len(self.recent_transcriptions) > self.max_context_items:
+                    self.recent_transcriptions.pop(0)
+
                 # Copy to clipboard
                 pyperclip.copy(text)
                 logging.info(f"✓ Transcribed: {text}")
@@ -121,7 +154,7 @@ def main():
     logging.info("=" * 60)
     logging.info("\nInitializing...")
 
-    dictation = WhisperDictation(model_size="base")
+    dictation = WhisperDictation(model_size="small")
 
     logging.info("\n" + "=" * 60)
     logging.info("Ready! Press Command+Space to start/stop dictation")
