@@ -20,3 +20,7 @@ venv/
 *.tmp
 *.temp
 .cache/
+
+# Claude Code settings (contains personal API keys and configurations)
+.claude.json
+.claude/settings.local.json
