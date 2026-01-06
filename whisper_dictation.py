@@ -21,8 +21,8 @@ from pathlib import Path
 
 class WhisperDictation:
     def __init__(self, model_size="small"):
-        # Set up logging - logs are in ~/whisper-dictation/logs (visible in Finder!)
-        log_dir = Path.home() / "whisper-dictation" / "logs"
+        # Set up logging - logs are in ~/Documents/all_tools/whisper-dictation/logs (visible in Finder!)
+        log_dir = Path.home() / "Documents" / "all_tools" / "whisper-dictation" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = log_dir / "dictation.log"
 

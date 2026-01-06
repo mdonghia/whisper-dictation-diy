@@ -9,7 +9,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/mdonghia/whisper-dictation/whisper_dictation.py</string>
+        <string>/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/mdonghia/Documents/all_tools/whisper-dictation/whisper_dictation.py</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -19,10 +19,10 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/mdonghia/whisper-dictation/logs/stdout.log</string>
+    <string>/Users/mdonghia/Documents/all_tools/whisper-dictation/logs/stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/mdonghia/whisper-dictation/logs/stderr.log</string>
+    <string>/Users/mdonghia/Documents/all_tools/whisper-dictation/logs/stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
