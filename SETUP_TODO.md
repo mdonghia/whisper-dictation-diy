@@ -15,11 +15,12 @@
   - [x] Added `.claude.json` and `.claude/settings.local.json` to .gitignore
   - [x] Protected personal API keys from being committed
 
-### 📋 Pending
-- [ ] **2. Create custom skills/commands for common workflows**
-  - Design custom shortcuts (e.g., /setup, /deploy)
-  - Implement custom commands
-  - Test and document custom skills
+### ✅ Completed
+- [x] **2. Create custom skills/commands for common workflows**
+  - [x] Created /restart-whisper for Whisper service management
+  - [x] Created /commit for quick git workflow
+  - [x] Created /create-todo for formatted todo lists
+  - [x] Moved commands to global ~/.claude/commands/ directory
 
 ## Future Enhancements (Not in current session)
 
