@@ -2,115 +2,84 @@
 
 Real-time speech-to-text dictation for macOS using OpenAI Whisper.
 
-## Installation
+## How It Works
 
-Run the setup script:
-```bash
-~/whisper-dictation/setup_whisper_dictation.sh
-```
+Press **Command+Space** to start recording, speak, press **Command+Space** again to stop. Text is automatically transcribed and pasted at your cursor.
 
-This will:
-- Configure the service to run automatically in the background
-- Start the service immediately
-- Set it to launch on login
+Works anywhere: Gmail, Slack, Notes, VS Code, etc.
 
-## Usage
+## Important: How the Service Runs
 
-1. Press **Command+Space** to start recording
-2. Speak your text
-3. Press **Command+Space** again to stop
-4. Text will be automatically transcribed and pasted where your cursor is!
+**This service must run in a Terminal window** (not as a background LaunchAgent). This is required because:
+- macOS microphone permissions only work properly in a Terminal context
+- LaunchAgents run without a GUI session and can't access the microphone reliably
 
-Works anywhere: Gmail, Slack, Notes, etc.
+The service starts via **Login Items** using `start_whisper.command`. A Terminal window will open at login - you can minimize it but don't close it.
 
 ## Files
 
 ```
-~/whisper-dictation/
-├── whisper_dictation.py           # Main script
-├── setup_whisper_dictation.sh     # Setup/installation script
-├── com.whisper.dictation.plist    # LaunchAgent configuration
-├── logs/                          # Log files (visible in Finder!)
-│   ├── dictation.log             # Main activity log
-│   ├── stdout.log                # Standard output
-│   └── stderr.log                # Error messages
-└── README.md                      # This file
+whisper-dictation/
+├── whisper_dictation.py      # Main script
+├── start_whisper.command     # Startup script (runs at login via Login Items)
+├── logs/                     # Log files
+│   └── dictation.log         # Activity log
+└── README.md                 # This file
 ```
+
+## Setup
+
+The service should already be configured to run at login. If not:
+
+1. Open **System Settings > General > Login Items**
+2. Click **+** and add `start_whisper.command` from this folder
+
+To start manually:
+```bash
+open ~/Documents/all_tools/whisper-dictation/start_whisper.command
+```
+
+## Permissions Required
+
+Both of these must be enabled in **System Settings > Privacy & Security**:
+
+- **Microphone** - Terminal needs microphone access
+- **Accessibility** - Python needs accessibility access (for the hotkey and auto-paste)
+
+If dictation stops working after a system update, check these permissions.
 
 ## Logs
 
-### View in Finder
-```bash
-open ~/whisper-dictation/logs
-```
-
-### View in Terminal
 ```bash
 # Watch live activity
-tail -f ~/whisper-dictation/logs/dictation.log
+tail -f ~/Documents/all_tools/whisper-dictation/logs/dictation.log
 
-# View all logs
-cat ~/whisper-dictation/logs/dictation.log
+# Open logs folder
+open ~/Documents/all_tools/whisper-dictation/logs
 ```
-
-## Service Management
-
-```bash
-# Stop the service
-launchctl unload ~/Library/LaunchAgents/com.whisper.dictation.plist
-
-# Start the service
-launchctl load ~/Library/LaunchAgents/com.whisper.dictation.plist
-
-# Check if running
-launchctl list | grep whisper
-```
-
-## Permissions
-
-On first run, macOS will ask for:
-- **Microphone access** - Required to record your voice
-- **Accessibility access** - Required to auto-paste text
-
-Grant these in: **System Settings > Privacy & Security**
 
 ## Troubleshooting
 
-If dictation isn't working:
+**Hotkey not responding:**
+- Check that Python has Accessibility permission
+- Make sure the Terminal window is still running
 
-1. Check if the service is running:
-   ```bash
-   launchctl list | grep whisper
-   ```
+**"No speech detected" every time:**
+- Check that Terminal has Microphone permission
+- Toggle the permission off and on, then restart the script
 
-2. View the logs:
-   ```bash
-   tail -f ~/whisper-dictation/logs/dictation.log
-   ```
-
-3. Restart the service:
-   ```bash
-   launchctl unload ~/Library/LaunchAgents/com.whisper.dictation.plist
-   launchctl load ~/Library/LaunchAgents/com.whisper.dictation.plist
-   ```
+**Service not starting at login:**
+- Verify `start_whisper.command` is in Login Items
 
 ## Model Options
 
-The script uses the "base" Whisper model by default. You can change this in [whisper_dictation.py:106](whisper_dictation.py#L106):
+Edit `whisper_dictation.py` to change the Whisper model (line 157):
 
 - `tiny` - Fastest, least accurate
-- `base` - Good balance (default)
-- `small` - Better accuracy, slower
-- `medium` - Great accuracy, much slower
+- `small` - Good balance (current default)
+- `medium` - Better accuracy, slower
 - `large` - Best accuracy, very slow
 
-## Uninstall
+## Stopping the Service
 
-```bash
-# Stop and remove the service
-launchctl unload ~/Library/LaunchAgents/com.whisper.dictation.plist
-rm ~/Library/LaunchAgents/com.whisper.dictation.plist
-
-# Remove all files
-rm -rf ~/whisper-dictation
-```
+Close the Terminal window running the script, or press Ctrl+C in that window.
