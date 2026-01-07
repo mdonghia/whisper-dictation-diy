@@ -24,3 +24,4 @@ venv/
 # Claude Code settings (contains personal API keys and configurations)
 .claude.json
 .claude/settings.local.json
+.env
