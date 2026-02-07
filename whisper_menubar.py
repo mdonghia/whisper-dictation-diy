@@ -113,6 +113,8 @@ class WhisperMenuBar(rumps.App):
         """Run combined keyboard listener for both hotkey and hold-to-record"""
         self.right_option_held = False
         self.cmd_held = False
+        self.space_held = False
+        self.last_toggle_time = 0
 
         def on_press(key):
             # Track modifier states
@@ -124,14 +126,20 @@ class WhisperMenuBar(rumps.App):
                 self.right_option_held = True
                 self.start_recording()
 
-            # Cmd+Space toggle
-            if key == keyboard.Key.space and self.cmd_held:
-                self.toggle_recording()
+            # Cmd+Space toggle (ignore key repeat via space_held flag)
+            if key == keyboard.Key.space and self.cmd_held and not self.space_held:
+                self.space_held = True
+                now = time.time()
+                if now - self.last_toggle_time > 1.0:
+                    self.last_toggle_time = now
+                    self.toggle_recording()
 
         def on_release(key):
             # Track modifier states
             if key == keyboard.Key.cmd:
                 self.cmd_held = False
+            if key == keyboard.Key.space:
+                self.space_held = False
 
             # Right Option release
             if key == keyboard.Key.alt_r and self.right_option_held:
