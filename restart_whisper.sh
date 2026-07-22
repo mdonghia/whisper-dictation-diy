@@ -4,4 +4,5 @@
 
 pkill -f whisper_menubar.py 2>/dev/null
 sleep 2
-/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/mdonghia/Documents/all_tools/whisper-dictation/whisper_menubar.py &
+cd /Users/mdonghia/whisper-dictation
+nohup /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 whisper_menubar.py >/dev/null 2>&1 &

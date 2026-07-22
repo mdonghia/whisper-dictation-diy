@@ -3,56 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>files</key>
-	<dict>
-		<key>Resources/Scripts/main.scpt</key>
-		<data>
-		yimgL10VaT9fRmpDLYQjsefwosI=
-		</data>
-		<key>Resources/applet.icns</key>
-		<data>
-		sINd6lbiqHD5dL8c6u79cFvVXhw=
-		</data>
-		<key>Resources/applet.rsrc</key>
-		<data>
-		ar5xmDs9mPpaINVXiVlVqUCB8ao=
-		</data>
-	</dict>
+	<dict/>
 	<key>files2</key>
-	<dict>
-		<key>Resources/Scripts/main.scpt</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			yimgL10VaT9fRmpDLYQjsefwosI=
-			</data>
-			<key>hash2</key>
-			<data>
-			+SHngv3uZwqiGwgEZJiyRlRY1/sD0I1UKyGy7v9FQTU=
-			</data>
-		</dict>
-		<key>Resources/applet.icns</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			sINd6lbiqHD5dL8c6u79cFvVXhw=
-			</data>
-			<key>hash2</key>
-			<data>
-			J7weZ6vlnv9r32tS5HFcyuPXl2StdDnfepLxAixlryk=
-			</data>
-		</dict>
-		<key>Resources/applet.rsrc</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			ar5xmDs9mPpaINVXiVlVqUCB8ao=
-			</data>
-			<key>hash2</key>
-			<data>
-			NV2dNLwgykV7aWfTBywUILBA9Lidl7F51PrkQw77SbM=
-			</data>
-		</dict>
-	</dict>
+	<dict/>
 	<key>rules</key>
 	<dict>
 		<key>^Resources/</key>

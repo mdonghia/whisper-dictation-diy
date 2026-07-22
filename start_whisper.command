@@ -1,6 +1,5 @@
 #!/bin/bash
-# Whisper Dictation Menu Bar App
-# Runs in background with menu bar icon - no Terminal window needed
-
-cd /Users/mdonghia/Documents/all_tools/whisper-dictation
-/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 whisper_menubar.py
+cd "/Users/mdonghia/whisper-dictation"
+echo "Whisper Dictation is starting. Keep this window open (you can minimize it)."
+echo "Press Command+Space anywhere to dictate."
+exec /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 whisper_menubar.py

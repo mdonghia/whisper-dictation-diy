@@ -33,9 +33,9 @@ load_dotenv(Path(__file__).parent / ".env")
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-MODE = "api"  # "api" for OpenAI API (faster), "local" for offline (slower)
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-LOCAL_MODEL_SIZE = "small"  # For local mode: tiny, base, small, medium, large
+MODE = "local"  # "local" runs on this Mac's GPU (fast, offline); "api" uses OpenAI
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")  # kept as automatic fallback
+LOCAL_MODEL_REPO = "mlx-community/whisper-large-v3-turbo"
 # ============================================================================
 
 # Set up logging
@@ -102,12 +102,19 @@ class WhisperMenuBar(rumps.App):
         logging.info("OpenAI API client ready")
 
     def _init_local(self):
-        """Initialize local faster-whisper model"""
-        from faster_whisper import WhisperModel
+        """Initialize local mlx-whisper model (runs on Apple GPU)"""
+        import mlx_whisper
+        self._mlx = mlx_whisper
 
-        logging.info(f"Loading local Whisper {LOCAL_MODEL_SIZE} model...")
-        self.model = WhisperModel(LOCAL_MODEL_SIZE, device="cpu", compute_type="int8")
-        logging.info("Local model loaded")
+        logging.info(f"Warming up local Whisper model ({LOCAL_MODEL_REPO})...")
+        # Transcribe one second of silence so the model is loaded into memory
+        # and the first real dictation is instant
+        self._mlx.transcribe(
+            np.zeros(16000, dtype=np.float32),
+            path_or_hf_repo=LOCAL_MODEL_REPO,
+            language="en",
+        )
+        logging.info("Local model ready")
 
     def _run_keyboard_listener(self):
         """Run combined keyboard listener for both hotkey and hold-to-record"""
@@ -147,8 +154,19 @@ class WhisperMenuBar(rumps.App):
                 if self.is_recording:
                     self.stop_recording()
 
-        with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
-            listener.join()
+        # If the listener ever dies (macOS hiccup, exception), restart it
+        # instead of leaving the app running but deaf to the hotkey
+        while True:
+            try:
+                with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+                    listener.join()
+                logging.warning("Keyboard listener stopped — restarting it")
+            except Exception as e:
+                logging.error(f"Keyboard listener crashed: {e} — restarting it")
+            self.cmd_held = False
+            self.space_held = False
+            self.right_option_held = False
+            time.sleep(2)
 
     def start_recording(self):
         """Start recording"""
@@ -220,7 +238,10 @@ class WhisperMenuBar(rumps.App):
             if self.mode == "api":
                 text = self._transcribe_api(tmp_filename)
             else:
-                text = self._transcribe_local(tmp_filename)
+                text = self._transcribe_local(audio)
+                if text is None and OPENAI_API_KEY:
+                    logging.warning("Local transcription failed — falling back to OpenAI API")
+                    text = self._transcribe_api(tmp_filename)
 
             elapsed = time.time() - start_time
 
@@ -234,16 +255,44 @@ class WhisperMenuBar(rumps.App):
                 with controller.pressed(keyboard.Key.cmd):
                     controller.press('v')
                     controller.release('v')
+                os.unlink(tmp_filename)
+            elif text is not None:
+                # Transcription worked but heard nothing — not a failure
+                logging.info("No speech detected")
+                os.unlink(tmp_filename)
             else:
-                logging.warning("No speech detected")
+                self._save_failed_recording(tmp_filename)
+
+        except Exception as e:
+            logging.error(f"Transcription crashed: {e}")
+            self._save_failed_recording(tmp_filename)
 
         finally:
-            os.unlink(tmp_filename)
             self.title = "🎙"
+
+    def _save_failed_recording(self, tmp_filename):
+        """Keep the audio when transcription fails so it can be retried later"""
+        failed_dir = log_dir.parent / "failed_recordings"
+        failed_dir.mkdir(parents=True, exist_ok=True)
+        saved_path = failed_dir / f"recording_{time.strftime('%Y-%m-%d_%H-%M-%S')}.wav"
+        try:
+            os.rename(tmp_filename, saved_path)
+        except OSError:
+            import shutil
+            shutil.move(tmp_filename, saved_path)
+        logging.warning(f"Transcription failed — audio saved to {saved_path}")
+        rumps.notification(
+            "Whisper Dictation",
+            "Transcription failed — recording saved",
+            f"Audio kept at {saved_path.name}. Ask Claude to transcribe it.",
+        )
 
     def _transcribe_api(self, audio_file):
         """Transcribe using OpenAI Whisper API"""
         try:
+            if self.client is None:
+                from openai import OpenAI
+                self.client = OpenAI(api_key=OPENAI_API_KEY)
             with open(audio_file, "rb") as f:
                 response = self.client.audio.transcriptions.create(
                     model="whisper-1",
@@ -255,18 +304,19 @@ class WhisperMenuBar(rumps.App):
             logging.error(f"API error: {e}")
             return None
 
-    def _transcribe_local(self, audio_file):
-        """Transcribe using local faster-whisper model"""
-        segments, info = self.model.transcribe(
-            audio_file,
-            language="en",
-            beam_size=5,
-            temperature=0.0,
-            vad_filter=True,
-            condition_on_previous_text=False,
-            word_timestamps=False,
-        )
-        return " ".join([segment.text.strip() for segment in segments])
+    def _transcribe_local(self, audio):
+        """Transcribe on this Mac's GPU using mlx-whisper"""
+        try:
+            result = self._mlx.transcribe(
+                audio.flatten().astype(np.float32),
+                path_or_hf_repo=LOCAL_MODEL_REPO,
+                language="en",
+                condition_on_previous_text=False,
+            )
+            return result["text"].strip()
+        except Exception as e:
+            logging.error(f"Local transcription error: {e}")
+            return None
 
     def quit_app(self, _):
         """Quit the application"""
