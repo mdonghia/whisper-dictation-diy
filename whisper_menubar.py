@@ -53,9 +53,53 @@ logging.basicConfig(
 )
 
 
+def request_permissions():
+    """Ask macOS for the permissions this app needs, so the standard
+    system popups appear (instead of silently recording nothing).
+    Safe to run every launch — only prompts when not yet granted."""
+    import ctypes
+
+    # Input Monitoring — needed to hear the Cmd+Space hotkey
+    try:
+        iokit = ctypes.CDLL("/System/Library/Frameworks/IOKit.framework/IOKit")
+        kIOHIDRequestTypeListenEvent = 1
+        if iokit.IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != 0:
+            logging.warning("Input Monitoring not granted yet — requesting")
+            iokit.IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+    except Exception as e:
+        logging.warning(f"Input Monitoring check failed: {e}")
+
+    # Accessibility — needed to auto-paste the text with Cmd+V
+    try:
+        from HIServices import (
+            AXIsProcessTrusted,
+            AXIsProcessTrustedWithOptions,
+            kAXTrustedCheckOptionPrompt,
+        )
+        if not AXIsProcessTrusted():
+            logging.warning("Accessibility not granted yet — requesting")
+            AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
+    except Exception as e:
+        logging.warning(f"Accessibility check failed: {e}")
+
+    # Microphone — a short throwaway recording triggers the popup if needed
+    try:
+        test = sd.rec(int(0.3 * 16000), samplerate=16000, channels=1, dtype="float32")
+        sd.wait()
+        peak = float(np.abs(test).max())
+        if peak > 0.0:
+            logging.info(f"Mic check OK (peak={peak:.6f})")
+        else:
+            logging.warning("Mic check SILENT — Microphone access not granted")
+    except Exception as e:
+        logging.warning(f"Mic check failed: {e}")
+
+
 class WhisperMenuBar(rumps.App):
     def __init__(self):
         super(WhisperMenuBar, self).__init__("🎙", quit_button=None)
+
+        request_permissions()
 
         self.mode = MODE
         self.model = None
@@ -83,6 +127,12 @@ class WhisperMenuBar(rumps.App):
         # Start combined keyboard listener in background thread
         self.keyboard_thread = threading.Thread(target=self._run_keyboard_listener, daemon=True)
         self.keyboard_thread.start()
+
+        # Exercise the model every 5 minutes so macOS never pages it out of
+        # memory — otherwise the first dictation after a long idle takes ~9s
+        # instead of ~0.4s while it reloads
+        self._warm_timer = rumps.Timer(self._keep_warm, 300)
+        self._warm_timer.start()
 
         logging.info("Whisper Dictation menu bar app started")
         logging.info(f"Mode: {'OpenAI API' if self.mode == 'api' else 'Local'}")
@@ -248,13 +298,9 @@ class WhisperMenuBar(rumps.App):
             if text:
                 pyperclip.copy(text)
                 logging.info(f"Transcribed in {elapsed:.1f}s: {text}")
-
-                # Auto-paste
-                controller = keyboard.Controller()
                 time.sleep(0.1)
-                with controller.pressed(keyboard.Key.cmd):
-                    controller.press('v')
-                    controller.release('v')
+                self._paste_cmd_v()
+                logging.info("Text pasted")
                 os.unlink(tmp_filename)
             elif text is not None:
                 # Transcription worked but heard nothing — not a failure
@@ -286,6 +332,29 @@ class WhisperMenuBar(rumps.App):
             "Transcription failed — recording saved",
             f"Audio kept at {saved_path.name}. Ask Claude to transcribe it.",
         )
+
+    def _keep_warm(self, _timer):
+        if self.mode != "local" or self.is_recording or self.title != "🎙":
+            return
+        try:
+            self._mlx.transcribe(
+                np.zeros(4800, dtype=np.float32),
+                path_or_hf_repo=LOCAL_MODEL_REPO,
+                language="en",
+            )
+        except Exception as e:
+            logging.warning(f"Keep-warm failed: {e}")
+
+    def _paste_cmd_v(self):
+        """Send Cmd+V using raw key codes. pynput's Controller looks up the
+        keyboard layout in a way macOS forbids off the main thread in a real
+        app bundle, which crashed the whole app right after transcribing."""
+        import Quartz
+        V_KEY = 9  # 'v' on a standard keyboard
+        for is_down in (True, False):
+            event = Quartz.CGEventCreateKeyboardEvent(None, V_KEY, is_down)
+            Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskCommand)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
 
     def _transcribe_api(self, audio_file):
         """Transcribe using OpenAI Whisper API"""
