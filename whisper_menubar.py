@@ -156,6 +156,18 @@ class WhisperMenuBar(rumps.App):
         import mlx_whisper
         self._mlx = mlx_whisper
 
+        # Pin the model's GPU memory so macOS can't swap it out when other
+        # apps (test runs, browsers, Claude sessions) squeeze RAM. Without
+        # this, a busy machine pushes the ~2.6GB of weights to swap and every
+        # dictation crawls (5-15s instead of <2s) while they page back in.
+        try:
+            import mlx.core as mx
+            wired_bytes = 4 * 1024 ** 3
+            mx.set_wired_limit(wired_bytes)
+            logging.info(f"Pinned {wired_bytes // 1024 ** 3}GB of GPU memory so the model stays resident")
+        except Exception as e:
+            logging.warning(f"Could not pin model memory (relying on keep-warm only): {e}")
+
         logging.info(f"Warming up local Whisper model ({LOCAL_MODEL_REPO})...")
         # Transcribe one second of silence so the model is loaded into memory
         # and the first real dictation is instant
@@ -337,11 +349,15 @@ class WhisperMenuBar(rumps.App):
         if self.mode != "local" or self.is_recording or self.title != "🎙":
             return
         try:
+            t0 = time.time()
             self._mlx.transcribe(
                 np.zeros(4800, dtype=np.float32),
                 path_or_hf_repo=LOCAL_MODEL_REPO,
                 language="en",
             )
+            took = time.time() - t0
+            if took > 2.0:
+                logging.warning(f"Keep-warm took {took:.1f}s — model was paged out (memory pressure)")
         except Exception as e:
             logging.warning(f"Keep-warm failed: {e}")
 
