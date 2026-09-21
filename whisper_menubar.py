@@ -95,7 +95,49 @@ def request_permissions():
         logging.warning(f"Mic check failed: {e}")
 
 
+_carbon = None
+
+def secure_input_on():
+    """True while macOS 'Secure Input' is active. While it is on, NO app can
+    hear global hotkeys. Normal cause: a password field has focus. Bad cause:
+    loginwindow leaves it stuck on after an unlock (known macOS bug) — locking
+    and unlocking the Mac again clears it."""
+    global _carbon
+    try:
+        if _carbon is None:
+            import ctypes
+            _carbon = ctypes.CDLL("/System/Library/Frameworks/Carbon.framework/Carbon")
+            _carbon.IsSecureEventInputEnabled.restype = ctypes.c_ubyte
+        return bool(_carbon.IsSecureEventInputEnabled())
+    except Exception as e:
+        logging.warning(f"Secure Input check failed: {e}")
+        return False
+
+
+class _ResilientListener(keyboard.Listener):
+    """pynput never re-enables its event tap after macOS disables it
+    (kCGEventTapDisabledByTimeout when our callback stalls, e.g. under memory
+    pressure, or ...ByUserInput). The listener thread keeps running but goes
+    silently deaf, so the restart loop below never fires. Keep a handle on
+    the tap and switch it back on."""
+
+    def _create_event_tap(self):
+        self._tap = super()._create_event_tap()
+        return self._tap
+
+    def _handler(self, proxy, event_type, event, refcon):
+        import Quartz
+        if event_type in (Quartz.kCGEventTapDisabledByTimeout,
+                          Quartz.kCGEventTapDisabledByUserInput):
+            logging.warning("macOS disabled the hotkey event tap — re-enabling it")
+            Quartz.CGEventTapEnable(self._tap, True)
+            return event
+        return super()._handler(proxy, event_type, event, refcon)
+
+
 class WhisperMenuBar(rumps.App):
+    HOTKEY_HELP = "Hotkeys: Cmd+Space (toggle) or Hold Right Option"
+    HOTKEY_BLOCKED = "Hotkeys BLOCKED by macOS Secure Input — lock & unlock your Mac (Ctrl+Cmd+Q)"
 
     def __init__(self):
         super(WhisperMenuBar, self).__init__("🎙", quit_button=None)
@@ -120,9 +162,10 @@ class WhisperMenuBar(rumps.App):
         self.recording_thread = None
 
         # Menu items
+        self.hotkey_item = rumps.MenuItem(self.HOTKEY_HELP, callback=None)
         self.menu = [
             rumps.MenuItem(f"Mode: {'OpenAI API' if self.mode == 'api' else 'Local'}", callback=None),
-            rumps.MenuItem("Hotkeys: Cmd+Space (toggle) or Hold Right Option", callback=None),
+            self.hotkey_item,
             None,  # Separator
             rumps.MenuItem("Quit", callback=self.quit_app)
         ]
@@ -135,6 +178,12 @@ class WhisperMenuBar(rumps.App):
         
         self._warm_timer = rumps.Timer(self._keep_warm, 900)
         self._warm_timer.start()
+
+        # Every 30s: is macOS Secure Input silencing our hotkeys? Say so in the
+        # menu bar instead of sitting there looking healthy but deaf.
+        self._secure_blocked = False
+        self._secure_timer = rumps.Timer(self._check_secure_input, 30)
+        self._secure_timer.start()
 
         logging.info("Whisper Dictation menu bar app started")
         logging.info(f"Mode: {'OpenAI API' if self.mode == 'api' else 'Local'}")
@@ -224,7 +273,7 @@ class WhisperMenuBar(rumps.App):
         # instead of leaving the app running but deaf to the hotkey
         while True:
             try:
-                with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+                with _ResilientListener(on_press=on_press, on_release=on_release) as listener:
                     listener.join()
                 logging.warning("Keyboard listener stopped — restarting it")
             except Exception as e:
@@ -349,8 +398,27 @@ class WhisperMenuBar(rumps.App):
             f"Audio kept at {saved_path.name}. Ask Claude to transcribe it.",
         )
 
+    def _check_secure_input(self, _timer):
+        blocked = secure_input_on()
+        if blocked == self._secure_blocked:
+            # Steady state — just keep the lock icon up while idle
+            if blocked and self.title == "🎙":
+                self.title = "🔒"
+            return
+        self._secure_blocked = blocked
+        if blocked:
+            logging.warning("macOS Secure Input is ON — hotkeys are blocked until it clears (lock & unlock your Mac)")
+            self.hotkey_item.title = self.HOTKEY_BLOCKED
+            if self.title == "🎙":
+                self.title = "🔒"
+        else:
+            logging.info("macOS Secure Input cleared — hotkeys working again")
+            self.hotkey_item.title = self.HOTKEY_HELP
+            if self.title == "🔒":
+                self.title = "🎙"
+
     def _keep_warm(self, _timer):
-        if self.mode != "local" or self.is_recording or self.title != "🎙":
+        if self.mode != "local" or self.is_recording or self.title not in ("🎙", "🔒"):
             return
         try:
             t0 = time.time()
