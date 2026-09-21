@@ -35,7 +35,7 @@ load_dotenv(Path(__file__).parent / ".env")
 # ============================================================================
 MODE = "local"  # "local" runs on this Mac's GPU (fast, offline); "api" uses OpenAI
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")  # kept as automatic fallback
-LOCAL_MODEL_REPO = "mlx-community/whisper-large-v3-turbo"
+LOCAL_MODEL_REPO = "mlx-community/whisper-small.en-mlx"
 # ============================================================================
 
 # Set up logging
@@ -96,6 +96,7 @@ def request_permissions():
 
 
 class WhisperMenuBar(rumps.App):
+
     def __init__(self):
         super(WhisperMenuBar, self).__init__("🎙", quit_button=None)
 
@@ -104,6 +105,8 @@ class WhisperMenuBar(rumps.App):
         self.mode = MODE
         self.model = None
         self.client = None
+        # Serialize all MLX inference so keep-warm cannot contend with dictation.
+        self.inference_lock = threading.Lock()
 
         # Initialize API or local model
         if self.mode == "api":
@@ -128,10 +131,9 @@ class WhisperMenuBar(rumps.App):
         self.keyboard_thread = threading.Thread(target=self._run_keyboard_listener, daemon=True)
         self.keyboard_thread.start()
 
-        # Exercise the model every 5 minutes so macOS never pages it out of
-        # memory — otherwise the first dictation after a long idle takes ~9s
-        # instead of ~0.4s while it reloads
-        self._warm_timer = rumps.Timer(self._keep_warm, 300)
+        # Exercise the smaller model every 15 minutes, without contending with dictation.
+        
+        self._warm_timer = rumps.Timer(self._keep_warm, 900)
         self._warm_timer.start()
 
         logging.info("Whisper Dictation menu bar app started")
@@ -162,20 +164,22 @@ class WhisperMenuBar(rumps.App):
         # dictation crawls (5-15s instead of <2s) while they page back in.
         try:
             import mlx.core as mx
-            wired_bytes = 4 * 1024 ** 3
+            # small.en uses under 1GB here; do not wire 4GB for the old model.
+            wired_bytes = int(1.5 * 1024 ** 3)
             mx.set_wired_limit(wired_bytes)
-            logging.info(f"Pinned {wired_bytes // 1024 ** 3}GB of GPU memory so the model stays resident")
+            logging.info(f"Set MLX wired limit to {wired_bytes / 1024 ** 3:.1f}GB")
         except Exception as e:
             logging.warning(f"Could not pin model memory (relying on keep-warm only): {e}")
 
         logging.info(f"Warming up local Whisper model ({LOCAL_MODEL_REPO})...")
         # Transcribe one second of silence so the model is loaded into memory
         # and the first real dictation is instant
-        self._mlx.transcribe(
-            np.zeros(16000, dtype=np.float32),
-            path_or_hf_repo=LOCAL_MODEL_REPO,
-            language="en",
-        )
+        with self.inference_lock:
+            self._mlx.transcribe(
+                np.zeros(16000, dtype=np.float32),
+                path_or_hf_repo=LOCAL_MODEL_REPO,
+                language="en",
+            )
         logging.info("Local model ready")
 
     def _run_keyboard_listener(self):
@@ -350,11 +354,16 @@ class WhisperMenuBar(rumps.App):
             return
         try:
             t0 = time.time()
-            self._mlx.transcribe(
-                np.zeros(4800, dtype=np.float32),
-                path_or_hf_repo=LOCAL_MODEL_REPO,
-                language="en",
-            )
+            if not self.inference_lock.acquire(blocking=False):
+                return
+            try:
+                self._mlx.transcribe(
+                    np.zeros(4800, dtype=np.float32),
+                    path_or_hf_repo=LOCAL_MODEL_REPO,
+                    language="en",
+                )
+            finally:
+                self.inference_lock.release()
             took = time.time() - t0
             if took > 2.0:
                 logging.warning(f"Keep-warm took {took:.1f}s — model was paged out (memory pressure)")
@@ -392,12 +401,13 @@ class WhisperMenuBar(rumps.App):
     def _transcribe_local(self, audio):
         """Transcribe on this Mac's GPU using mlx-whisper"""
         try:
-            result = self._mlx.transcribe(
-                audio.flatten().astype(np.float32),
-                path_or_hf_repo=LOCAL_MODEL_REPO,
-                language="en",
-                condition_on_previous_text=False,
-            )
+            with self.inference_lock:
+                result = self._mlx.transcribe(
+                    audio.flatten().astype(np.float32),
+                    path_or_hf_repo=LOCAL_MODEL_REPO,
+                    language="en",
+                    condition_on_previous_text=False,
+                )
             return result["text"].strip()
         except Exception as e:
             logging.error(f"Local transcription error: {e}")
