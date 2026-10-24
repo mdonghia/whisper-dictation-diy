@@ -37,7 +37,7 @@ LOCAL_MODEL_SIZE = "small"  # For local mode: tiny, base, small, medium, large
 class WhisperDictation:
     def __init__(self, mode="api"):
         # Set up logging
-        log_dir = Path.home() / "whisper-dictation" / "logs"
+        log_dir = Path.home() / "Whisper Dictation" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = log_dir / "dictation.log"
 
