@@ -39,7 +39,7 @@ LOCAL_MODEL_REPO = "mlx-community/whisper-small.en-mlx"
 # ============================================================================
 
 # Set up logging
-log_dir = Path.home() / "Whisper Dictation" / "logs"
+log_dir = Path(__file__).resolve().parent / "logs"
 log_dir.mkdir(parents=True, exist_ok=True)
 log_file = log_dir / "dictation.log"
 
