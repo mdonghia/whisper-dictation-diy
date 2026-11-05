@@ -84,7 +84,22 @@
       "mcp__Zoom_for_Claude",
       "mcp__github",
       "mcp__playwright",
-      "mcp__claude-code-remote"
+      "mcp__claude-code-remote",
+      "mcp__Composio",
+      "mcp__Google_Sheets",
+      "mcp__Google_Docs",
+      "mcp__Google_Slides",
+      "mcp__Mike_s_Wiki",
+      "mcp__Gmail_0c377883",
+      "mcp__Gmail_dac33d65",
+      "mcp__Todoist",
+      "mcp__Tiller",
+      "mcp__Supabase",
+      "mcp__Facebook_Ads",
+      "mcp__Browser_Use_MCP",
+      "mcp__Claude_Academy",
+      "mcp__claude-artifacts",
+      "mcp__Indeed"
     ]
   },
   "hooks": {
